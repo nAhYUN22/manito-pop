@@ -49,3 +49,11 @@ yarn-error.log*
 
 # IDE settings
 .idea/
+
+# SQLite data (including write-ahead log and shared-memory files)
+/data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+!.env.example

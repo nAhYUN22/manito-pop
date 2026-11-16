@@ -1,5 +1,10 @@
-import { env } from "cloudflare:workers";
+import { findRoom, insertRoom, updateRoom } from "../../../db";
+import { hasAllowedOrigin } from "../../../lib/request-origin";
+
 import { draw } from "../../../lib/draw";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Person = {
   name: string;
@@ -16,7 +21,6 @@ type Room = {
   round: number;
   drawnAt?: string;
 };
-type Row = { id: string; admin_hash: string; data: string; revision: number };
 class Problem extends Error {
   constructor(
     message: string,
@@ -88,14 +92,7 @@ function summary(room: Room, admin: boolean) {
   };
 }
 async function getRow(id: string) {
-  if (!env.DB)
-    throw new Problem(
-      "저장소에 연결할 수 없어요. 잠시 후 다시 시도해주세요.",
-      503,
-    );
-  const row = await env.DB.prepare("SELECT * FROM rooms WHERE id = ?")
-    .bind(id)
-    .first<Row>();
+  const row = findRoom(id);
   if (!row)
     throw new Problem("모임을 찾을 수 없어요. 초대 링크를 확인해주세요.", 404);
   return row;
@@ -113,6 +110,11 @@ export async function GET(req: Request) {
   }
 }
 function fail(e: unknown) {
+  if (!(e instanceof Problem))
+    console.error(
+      "Room request failed:",
+      e instanceof Error ? e.message : "Unknown error",
+    );
   return json(
     {
       error:
@@ -125,8 +127,7 @@ function fail(e: unknown) {
 }
 export async function POST(req: Request) {
   try {
-    const origin = req.headers.get("Origin");
-    if (origin && origin !== new URL(req.url).origin)
+    if (!hasAllowedOrigin(req))
       throw new Problem("허용되지 않은 요청이에요.", 403);
     const raw = await req.text();
     if (raw.length > 12000) throw new Problem("입력 내용이 너무 길어요.");
@@ -138,7 +139,6 @@ export async function POST(req: Request) {
     }
     if (!b || typeof b !== "object")
       throw new Problem("요청 형식이 올바르지 않아요.");
-    if (!env.DB) throw new Problem("저장소에 연결할 수 없어요.", 503);
     if (b.action === "create") {
       const title = typeof b.title === "string" ? normalize(b.title) : "";
       if (!title || title.length > 40)
@@ -168,11 +168,7 @@ export async function POST(req: Request) {
         targets: [],
         round: 0,
       };
-      await env.DB.prepare(
-        "INSERT INTO rooms (id,admin_hash,data,revision) VALUES (?,?,?,0)",
-      )
-        .bind(id, await hash(admin), JSON.stringify(room))
-        .run();
+      insertRoom(id, await hash(admin), JSON.stringify(room));
       return json({ id, admin, ...summary(room, true) }, 201);
     }
     if (!["shuffle", "reveal"].includes(b.action) || typeof b.id !== "string")
@@ -252,12 +248,8 @@ export async function POST(req: Request) {
           };
         }
       }
-      const updated = await env.DB.prepare(
-        "UPDATE rooms SET data=?,revision=revision+1 WHERE id=? AND revision=?",
-      )
-        .bind(JSON.stringify(room), b.id, row.revision)
-        .run();
-      if (updated.meta.changes) {
+      const updated = updateRoom(b.id, row.revision, JSON.stringify(room));
+      if (updated) {
         if (error) throw error;
         return json(result);
       }

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-const base = process.env.TEST_BASE_URL || "http://127.0.0.1:5173";
+const base = process.env.TEST_BASE_URL || "http://127.0.0.1:3000";
+const requestOrigin = process.env.TEST_APP_ORIGIN || new URL(base).origin;
 async function post(body, admin) {
   const res = await fetch(`${base}/api/rooms`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Origin: requestOrigin,
       ...(admin ? { Authorization: `Bearer ${admin}` } : {}),
     },
     body: JSON.stringify(body),

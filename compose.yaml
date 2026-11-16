@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_PATH: /data/manito.sqlite
+      APP_ORIGIN: ${APP_ORIGIN:-}
+    volumes:
+      - manito-data:/data
+
+volumes:
+  manito-data:
